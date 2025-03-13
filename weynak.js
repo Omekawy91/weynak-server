@@ -9,20 +9,18 @@ const asyncHandler = require("express-async-handler");
 const { User, Meeting, Participant, Movement } = require("./model");
 
 const app = express();
-const port = process.env.PORT || 8900;
+const port = process.env.PORT ||8008;
 
-// Middleware
+
 app.use(express.json());
-app.use(cors()); // السماح بالاتصالات من أي دومين
+app.use(cors());
 
-// الاتصال بقاعدة البيانات MongoDB
 
 
 mongoose.connect("mongodb://localhost:27017/weynak")
     .then(() => console.log("Connected to MongoDB"))
     .catch(err => console.error("Database connection error:", err));
 
-// إعداد nodemailer
 const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -31,12 +29,10 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-// دالة لإنشاء التوكن
 const generateToken = (user) => {
     return jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: "1h" });
 };
 
-// ميدل وير للتحقق من التوكن
 const authenticateToken = (req, res, next) => {
     const token = req.header("Authorization");
     if (!token) return res.status(401).json({ message: "Access Denied!" });
@@ -50,7 +46,6 @@ const authenticateToken = (req, res, next) => {
     }
 };
 
-//  تسجيل مستخدم جديد
 app.post("/register", asyncHandler(async (req, res) => {
     const { name, email, password } = req.body;
     if (!name || !email || !password) return res.status(400).json({ message: "All fields are required!" });
@@ -65,7 +60,6 @@ app.post("/register", asyncHandler(async (req, res) => {
     res.json({ message: "User registered successfully!" });
 }));
 
-//  تسجيل الدخول
 app.post("/login", asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: "All fields are required!" });
@@ -80,13 +74,16 @@ app.post("/login", asyncHandler(async (req, res) => {
     res.json({ token });
 }));
 
-//  إرسال OTP لإعادة تعيين كلمة المرور
 app.post("/forgot-password", asyncHandler(async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: "Email is required!" });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const user = await User.findOneAndUpdate({ email }, { otp, otp_expires_at: Date.now() + 15 * 60 * 1000 }, { new: true });
+    const user = await User.findOneAndUpdate(
+        { email },
+        { otp, otp_expires_at: Date.now() + 15 * 60 * 1000 },
+        { new: true }
+    );
     if (!user) return res.status(404).json({ message: "Email not found!" });
 
     const mailOptions = {
@@ -102,7 +99,6 @@ app.post("/forgot-password", asyncHandler(async (req, res) => {
     });
 }));
 
-// إعادة تعيين كلمة المرور باستخدام OTP
 app.post("/reset-password", asyncHandler(async (req, res) => {
     const { email, otp, newPassword } = req.body;
     if (!email || !otp || !newPassword) return res.status(400).json({ message: "All fields are required!" });
@@ -110,26 +106,31 @@ app.post("/reset-password", asyncHandler(async (req, res) => {
     const user = await User.findOne({ email, otp });
     if (!user) return res.status(400).json({ message: "Invalid OTP!" });
 
+    if (user.otp_expires_at < Date.now()) {
+        return res.status(400).json({ message: "OTP has expired!" });
+    }
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
     user.otp = null;
+    user.otp_expires_at = null;
     await user.save();
 
     res.json({ message: "Password reset successfully!" });
 }));
-
-// تشغيل السيرفر
-const server = app.listen(port, () => {
-    console.log(` Server running at http://localhost:${port}`);
+app.get('/', (req, res) => {
+    res.send("Welcome to the Home Page!");
+});
+app.listen(port,() => {
+    console.log(`Server running on http://localhost:${port}`);
 });
 
-// التعامل مع أخطاء البورت
-server.on("error", (err) => {
+app.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-        console.error(` Port ${port} is already in use`);
+        console.error(`Port ${port} is already in use`);
         process.exit(1);
     } else {
-        console.error(" Server error:", err);
+        console.error("Server error:", err);
     }
 });
 
